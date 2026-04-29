@@ -10,8 +10,8 @@ from PyQt5.QtCore import (
     Qt, QTimer, QTime, pyqtSlot, QSize, QRect, QPoint, QPointF,
 )
 from PyQt5.QtGui import (
-    QPainter, QColor, QPen, QFont, QBrush, QImage, QPixmap,
-    QLinearGradient, QPainterPath, QFontDatabase, QPolygonF,
+    QPainter, QColor, QPen, QFont, QImage, QPixmap,
+    QPainterPath, QFontDatabase, QPolygonF,
 )
 
 # ── colour palette ────────────────────────────────────────────────────────────
@@ -94,12 +94,14 @@ class SignalBars(QWidget):
 
 
 class CompassStrip(QWidget):
-    """Horizontal scrolling compass tape."""
+    """Circular rotating compass rose."""
+    _DIAL_SIZE = 52
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._heading = 0.0
-        self.setFixedHeight(36)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setFixedSize(self._DIAL_SIZE + 2, self._DIAL_SIZE + 2)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
     def set_heading(self, deg):
         self._heading = deg % 360
@@ -108,48 +110,82 @@ class CompassStrip(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        w, h = self.width(), self.height()
 
-        p.fillRect(0, 0, w, h, QColor(BG3))
+        d = self._DIAL_SIZE
+        cx, cy = d // 2 + 1, d // 2 + 1
 
-        # px per degree
-        ppd = w / 60.0
-        center_deg = self._heading
+        # ── rotate ring opposite to heading so needle always points to north ──
+        p.save()
+        p.translate(cx, cy)
+        p.rotate(-self._heading)
 
-        cardinals = {0: "N", 45: "NE", 90: "E", 135: "SE",
-                     180: "S", 225: "SW", 270: "W", 315: "NW"}
+        # outer filled circle
+        p.setPen(QPen(QColor("#1565C0"), 2))
+        p.setBrush(QColor("#0a1828"))
+        p.drawEllipse(-d // 2, -d // 2, d, d)
 
-        font_tick = QFont(MONO_FONT, 8)
-        font_card = QFont(MONO_FONT, 9, QFont.Bold)
-        p.setPen(QColor(TEXT_DIM))
+        # degree tick marks (every 10°)
+        for tick_deg in range(0, 360, 10):
+            rad = math.radians(tick_deg)
+            is_major = (tick_deg % 90 == 0)
+            outer_r = d // 2 - 1
+            inner_r = outer_r - (5 if is_major else 3)
+            x1 = math.sin(rad) * outer_r
+            y1 = -math.cos(rad) * outer_r
+            x2 = math.sin(rad) * inner_r
+            y2 = -math.cos(rad) * inner_r
+            pen_color = "#1565C0" if is_major else "#2a4a70"
+            p.setPen(QPen(QColor(pen_color), 1))
+            p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
-        for offset in range(-40, 41, 10):
-            deg = (center_deg + offset) % 360
-            x = int(w / 2 + offset * ppd)
-            tick_h = 12 if deg % 45 == 0 else 7
-            p.drawLine(x, h - tick_h, x, h)
-
-            label = cardinals.get(int(deg))
-            if label:
-                p.setFont(font_card)
-                p.setPen(QColor(ACCENT))
-            else:
-                p.setFont(font_tick)
-                p.setPen(QColor(TEXT_DIM))
-                label = str(int(deg))
+        # cardinal labels inside the ring
+        cardinals = {0: ("N", "#EF5350"), 90: ("E", "#ffffff"),
+                     180: ("S", "#ffffff"), 270: ("W", "#ffffff")}
+        font_card = QFont(MONO_FONT, 6, QFont.Bold)
+        p.setFont(font_card)
+        label_r = d // 2 - 10
+        for card_deg, (label, color) in cardinals.items():
+            rad = math.radians(card_deg)
+            lx = math.sin(rad) * label_r
+            ly = -math.cos(rad) * label_r
+            p.setPen(QColor(color))
             fm = p.fontMetrics()
-            p.drawText(x - fm.horizontalAdvance(label) // 2, h - tick_h - 3, label)
+            lw = fm.horizontalAdvance(label)
+            lh = fm.height()
+            p.drawText(QPointF(lx - lw / 2, ly + lh / 3), label)
 
-        # centre line
-        p.setPen(QPen(QColor(ACCENT), 2))
-        p.drawLine(w // 2, 0, w // 2, h)
+        p.restore()
 
-        # gradient fade edges
-        for side in (0, 1):
-            grad = QLinearGradient(0, 0, 60, 0) if side == 0 else QLinearGradient(w, 0, w - 60, 0)
-            grad.setColorAt(0, QColor(BG3))
-            grad.setColorAt(1, QColor(BG3 + "00"))
-            p.fillRect(0 if side == 0 else w - 60, 0, 60, h, QBrush(grad))
+        # ── needle (fixed, always points up = north) ──────────────────────────
+        needle_len = d // 2 - 6
+        needle_w = 3
+        path_n = QPainterPath()
+        path_n.moveTo(cx, cy - needle_len)
+        path_n.lineTo(cx - needle_w, cy)
+        path_n.lineTo(cx + needle_w, cy)
+        path_n.closeSubpath()
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#EF5350"))
+        p.drawPath(path_n)
+        path_s = QPainterPath()
+        path_s.moveTo(cx, cy + needle_len)
+        path_s.lineTo(cx - needle_w, cy)
+        path_s.lineTo(cx + needle_w, cy)
+        path_s.closeSubpath()
+        p.setBrush(QColor("#90CAF9"))
+        p.drawPath(path_s)
+        p.setBrush(QColor("#ffffff"))
+        p.drawEllipse(QPointF(cx, cy), 2.5, 2.5)
+
+        # ── heading readout inside the dial (bottom interior, fixed) ──────────
+        font_hdg = QFont(MONO_FONT, 5)
+        p.setFont(font_hdg)
+        p.setPen(QColor("#64B5F6"))
+        hdg_txt = f"{int(self._heading):03d}°"
+        fm = p.fontMetrics()
+        tx = cx - fm.horizontalAdvance(hdg_txt) // 2
+        ty = cy + d // 2 - 5
+        p.drawText(tx, ty, hdg_txt)
 
 
 class BatteryBar(QWidget):
@@ -448,14 +484,8 @@ class TopBar(QWidget):
         lay.addWidget(Separator())
 
         # Compass
-        compass_group = QVBoxLayout()
-        compass_group.setSpacing(2)
-        c_lbl = QLabel("PUSULA")
-        c_lbl.setStyleSheet(f"font-size: 9px; color: {TEXT_DIM}; letter-spacing: 2px;")
         self.compass = CompassStrip()
-        compass_group.addWidget(c_lbl)
-        compass_group.addWidget(self.compass)
-        lay.addLayout(compass_group)
+        lay.addWidget(self.compass, alignment=Qt.AlignVCenter)
         lay.addStretch()
 
         # Emergency stop
