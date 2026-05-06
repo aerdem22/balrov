@@ -922,21 +922,28 @@ class MainWindow(QMainWindow):
         self._mav.ping_updated.connect(self._on_ping)
         self._mav.connected.connect(self._on_connected)
         self._mav.connection_lost.connect(self._on_connection_lost)
-        self._mav.heartbeat_received.connect(self._watchdog.feed)
+        if self._watchdog and hasattr(self._mav, "heartbeat_received"):
+            self._mav.heartbeat_received.connect(self._watchdog.feed)
 
         # Camera
         self._cam.frame_ready.connect(self.cam_view.set_frame)
 
-        # GPIO
-        self._gpio.tether_updated.connect(self._on_tether)
-        self._gpio.leak_detected.connect(self._on_leak)
-        self._gpio.emergency_triggered.connect(self._emergency_activated)
+        # GPIO (sim modunda None olabilir)
+        if self._gpio:
+            if hasattr(self._gpio, "tether_updated"):
+                self._gpio.tether_updated.connect(self._on_tether)
+            if hasattr(self._gpio, "leak_detected"):
+                self._gpio.leak_detected.connect(self._on_leak)
+            if hasattr(self._gpio, "emergency_triggered"):
+                self._gpio.emergency_triggered.connect(self._emergency_activated)
 
-        # Watchdog
-        self._watchdog.timeout_triggered.connect(self._on_watchdog_timeout)
+        # Watchdog (sim modunda None olabilir)
+        if self._watchdog:
+            self._watchdog.timeout_triggered.connect(self._on_watchdog_timeout)
 
         # TopBar
-        self.topbar.lumen_changed.connect(self._gpio.set_lumen)
+        if self._gpio and hasattr(self._gpio, "set_lumen"):
+            self.topbar.lumen_changed.connect(self._gpio.set_lumen)
         self.topbar.emergency_clicked.connect(self._on_emergency_btn)
         self.topbar.connect_clicked.connect(self._on_connect_btn)
 
@@ -998,8 +1005,10 @@ class MainWindow(QMainWindow):
         if conn and self._elapsed_start is None:
             self._elapsed_start = QTime.currentTime()
             self._elapsed_timer.start(1000)
-            self._logger.start()
-            self._watchdog.arm()
+            if self._logger:
+                self._logger.start()
+            if self._watchdog:
+                self._watchdog.arm()
 
     @pyqtSlot(float)
     def _on_tether(self, meters):
@@ -1022,12 +1031,15 @@ class MainWindow(QMainWindow):
     def _on_connect_btn(self):
         if not self._connected:
             self._mav.start()
-            self._gpio.start()
+            if self._gpio:
+                self._gpio.start()
 
     def _on_emergency_btn(self):
-        self._gpio.trigger_emergency()
+        if self._gpio:
+            self._gpio.trigger_emergency()
         self._mav.send_emergency_stop()
-        self._logger.log_event("EMERGENCY_STOP_OPERATOR")
+        if self._logger:
+            self._logger.log_event("EMERGENCY_STOP_OPERATOR")
 
     def _emergency_activated(self):
         self._logger.log_event("EMERGENCY_GPIO_TRIGGERED")
@@ -1075,7 +1087,10 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._mav.stop()
         self._cam.stop()
-        self._gpio.stop()
-        self._watchdog.stop()
-        self._logger.stop()
+        if self._gpio:
+            self._gpio.stop()
+        if self._watchdog:
+            self._watchdog.stop()
+        if self._logger:
+            self._logger.stop()
         event.accept()
