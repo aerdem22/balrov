@@ -1,0 +1,2 @@
+timestamp,heading,pitch,roll,depth,battery_pct,battery_volt,arm,mode,m1,m2,m3,m4,m5,m6,leak,ping_ms,tether_m
+2026-05-06T13:35:14.593657,EVENT,MINI_ROV_TRANSFER=ON,,,,,,,,,,,,,,,
